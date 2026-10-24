@@ -1,14 +1,21 @@
-# DeLien Calendar for Windows インストールスクリプト（管理者権限不要）
+﻿# DeLien Calendar for Windows インストールスクリプト（管理者権限不要）
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1
-# インストール先: %LOCALAPPDATA%\Programs\DeLienCalendar
+#   powershell -ExecutionPolicy Bypass -File .\install.ps1 -Destination "D:\Apps\DeLienCalendar"
+# インストール先の既定: %LOCALAPPDATA%\Programs\DeLienCalendar
 param(
-    [switch]$NoLaunch
+    [switch]$NoLaunch,
+    [string]$Destination = ''
 )
 
 $ErrorActionPreference = 'Stop'
 
 $source = Split-Path -Parent $MyInvocation.MyCommand.Path
-$dest = Join-Path $env:LOCALAPPDATA 'Programs\DeLienCalendar'
+$dest = if ($Destination -ne '') {
+    [System.IO.Path]::GetFullPath($Destination)
+}
+else {
+    Join-Path $env:LOCALAPPDATA 'Programs\DeLienCalendar'
+}
 $exe = Join-Path $dest 'DeLienCalendar.exe'
 
 Write-Host "インストール先: $dest" -ForegroundColor Cyan

@@ -25,9 +25,32 @@ calendar.delien.xyz を WebView2 でホストする常駐型デスクトップ�
 ## ビルド
 
 ```powershell
-# 配布用（framework-dependent / win-x64）
+# ZIP（ポータブル版）のみ
 .\desktop\build.ps1
-# 出力: desktop\dist\DeLienCalendar-win-x64.zip
+
+# ZIP + インストーラ
+.\desktop\build.ps1 -Version 0.1.0 -WithInstaller
+```
+
+出力物:
+
+| ファイル | 内容 |
+|---|---|
+| `desktop\dist\DeLienCalendar-win-x64.zip` | ポータブル版 |
+| `desktop\dist\DeLienCalendar-<version>-setup.exe` | インストーラ（`-WithInstaller` 時） |
+
+インストーラの作成には [Inno Setup 6](https://jrsoftware.org/isdl.php) が必要です。
+`build.ps1` は次の場所から `ISCC.exe` を自動的に探します。
+
+- `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`
+- `%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe`
+- `%ProgramFiles%\Inno Setup 6\ISCC.exe`
+
+手動でインストーラだけ作る場合:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" `
+  /DAppVersion=0.1.0 .\desktop\installer\setup.iss
 ```
 
 手動でビルドする場合:
@@ -53,18 +76,39 @@ powershell -ExecutionPolicy Bypass -File .\desktop\tools\make_icon.ps1
   `release.yml` がタグ push を契機に実行します（このリポジトリには置いていません）。
 - アプリ内のバージョンは設定画面の下部に表示されます。
 
-## インストール（未署名配布）
+## インストール
 
-コード署名証明書を使用しないため、MSIX ではなく **ZIP + インストールスクリプト**で配布します。
-SmartScreen の警告（「詳細情報」→「実行」）が表示される場合があります。
+### インストーラ（推奨）
+
+配布物の `DeLienCalendar-<version>-setup.exe` を実行し、ウィザードに従ってください。
+
+- **インストール先は自由に指定できます**（既定: `%LOCALAPPDATA%\Programs\DeLienCalendar`）
+- 管理者権限は不要です。`C:\Program Files` などへ入れる場合は、インストーラを「管理者として実行」してください
+- スタートメニューにショートカットを作成（デスクトップへの作成は任意）
+- アンインストールは「設定 > アプリ」または スタートメニューの「DeLien Calendar のアンインストール」から
+
+コマンドラインでのインストール（サイレント・インストール先指定）:
 
 ```powershell
-# 展開後、フォルダ内で実行（管理者権限不要）
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+.\DeLienCalendar-0.1.0-setup.exe /VERYSILENT /DIR="D:\Apps\DeLienCalendar"
 ```
 
-インストール先は `%LOCALAPPDATA%\Programs\DeLienCalendar`、スタートメニューにショートカットを作成します。
-アンインストールはスタートメニューの「DeLien Calendar」を削除し、上記フォルダと `%LOCALAPPDATA%\DeLienCalendar` を削除してください。
+### ポータブル版（ZIP）
+
+`DeLienCalendar-win-x64.zip` を展開すると、そのまま `DeLienCalendar.exe` を実行できます。
+スタートメニュー登録やアンインストール情報が不要な場合はこちらを使ってください。
+
+スタートメニュー登録と自動起動を行いたい場合は、展開したフォルダ内で `install.ps1` を実行します
+（既定のインストール先は `%LOCALAPPDATA%\Programs\DeLienCalendar`）。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+
+# インストール先を指定する場合
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Destination "D:\Apps\DeLienCalendar"
+```
+
+> このビルドはコード署名を行っていないため、SmartScreen の警告が表示される場合があります。
 
 ## 仕組み
 
@@ -135,6 +179,9 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 ## 制約
 
 - **コード署名なし**: SmartScreen の警告が出ます。署名証明書を用意できれば MSIX + 自動更新へ移行できます。
+- **アンインストール時**: タスクスケジューラの登録（アラーム・定期同期）と自動起動は
+  `DeLienCalendar.exe --uninstall-cleanup` により自動で解除されます。
+  設定・キャッシュ（`%LOCALAPPDATA%\DeLienCalendar`）は残るため、不要なら手動で削除してください。
 - **予定変更の反映遅延**: アプリ未起動中は 15 分間隔の同期のため、変更が反映されるまで最大 15 分かかります。
 - **スリープ中**: スリープから復帰したタイミングで発火します（Windows の制約）。
 - **集中モード / 通知のオフ**: OS の通知設定で本アプリの通知を許可してください。

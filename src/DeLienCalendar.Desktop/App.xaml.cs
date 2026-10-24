@@ -20,6 +20,13 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        // アンインストーラからの後片付け（タスクスケジューラ登録・自動起動の解除）
+        if (TryHandleUninstallCleanup(e.Args))
+        {
+            Shutdown();
+            return;
+        }
+
         // タスクスケジューラから起動された「アラーム表示のみ」モード
         if (TryHandleNotifyMode(e.Args))
         {
@@ -113,6 +120,24 @@ public partial class App : System.Windows.Application
             _mainWindow.SetSessionActive(true);
             _sync?.Start();
         }
+    }
+
+    /// <summary>--uninstall-cleanup で起動された場合は登録を解除して終了する（アンインストーラから呼ばれる）</summary>
+    private static bool TryHandleUninstallCleanup(string[] args)
+    {
+        if (!args.Any(a => string.Equals(a, "--uninstall-cleanup", StringComparison.OrdinalIgnoreCase))) return false;
+
+        try
+        {
+            ReminderScheduler.RemoveOwnedTasks();
+            StartupService.SetEnabled(false);
+            AppLog.Write("アンインストール前の後片付けを実行しました（タスクと自動起動を解除）。");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("アンインストール前の後片付けに失敗しました", ex);
+        }
+        return true;
     }
 
     /// <summary>--notify {eventId} で起動された場合はトーストだけ表示して終了する</summary>
