@@ -108,11 +108,24 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $lines = Get-ChildItem dist -File -Include '*.zip', '*-setup.exe' | ForEach-Object {
+
+          # 注意: Get-ChildItem の -Include は -Path にワイルドカードが無いと何も返さない。
+          # そのため明示的にワイルドカードで列挙する（空ファイル生成 → アップロード失敗を防ぐ）。
+          $files = @(Get-ChildItem -Path 'dist\*.zip', 'dist\*-setup.exe' -File -ErrorAction SilentlyContinue)
+          if ($files.Count -eq 0) {
+            throw 'チェックサム対象のファイルが見つかりません（ビルドに失敗しています）。'
+          }
+
+          $lines = $files | ForEach-Object {
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
           }
-          $lines | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
+          $lines | Out-File -FilePath 'dist\SHA256SUMS.txt' -Encoding ascii
           $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding ascii -Append
+
+          $size = (Get-Item 'dist\SHA256SUMS.txt').Length
+          Write-Host "SHA256SUMS.txt: $size バイト / $($files.Count) 件"
+          if ($size -le 0) { throw 'SHA256SUMS.txt が空です。' }
+          Get-Content 'dist\SHA256SUMS.txt'
 
       - name: 7. Create GitHub Release
         uses: softprops/action-gh-release@v2
