@@ -355,15 +355,58 @@ public partial class SettingsView : UserControl
 
         if (info is not null)
         {
-            UpdateStatusText.Text = $"現在 v{current} → 新しいバージョン v{info.Version} があります。";
+            var prerelease = info.IsPrerelease ? "（プレリリース）" : "";
+            UpdateStatusText.Text = $"現在 v{current} → 新しいバージョン v{info.Version}{prerelease} があります。";
             OpenReleaseButton.Visibility = Visibility.Visible;
+            ApplyUpdateButton.Visibility = info.SetupDownloadUrl is not null ? Visibility.Visible : Visibility.Collapsed;
             return;
         }
 
         OpenReleaseButton.Visibility = Visibility.Collapsed;
+        ApplyUpdateButton.Visibility = Visibility.Collapsed;
         UpdateStatusText.Text = UpdateService.LastError is { } error
             ? $"現在 v{current}（確認できませんでした: {error}）"
             : $"現在 v{current}（最新です）";
+    }
+
+    private async void ApplyUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        var info = UpdateService.LatestAvailable;
+        if (_settings is null || info is null) return;
+
+        var answer = MessageBox.Show(
+            $"v{info.Version} にアップデートします。\n\n" +
+            "アプリを終了してインストーラを起動し、完了後にアプリを起動し直します。\n" +
+            "設定（通知・音声など）は引き継がれます。\n\n" +
+            "※ コード署名を行っていないため、Windows の警告が表示される場合があります。\n" +
+            "　その場合は「詳細情報」→「実行」を選んでください。\n\n続行しますか？",
+            "アップデートの確認", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.OK) return;
+
+        ApplyUpdateButton.IsEnabled = false;
+        CheckUpdateButton.IsEnabled = false;
+
+        try
+        {
+            var progress = new Progress<int>(percent =>
+                UpdateStatusText.Text = $"ダウンロード中… {percent}%");
+
+            var installerPath = await UpdateService.DownloadInstallerAsync(info, progress);
+            UpdateStatusText.Text = "インストーラを起動します。アプリを終了します…";
+
+            _settings.Save();
+            UpdateService.LaunchInstaller(installerPath);
+
+            // ファイルロックを解放し、インストーラに置き換えてもらう
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("アプリ内アップデートに失敗しました", ex);
+            UpdateStatusText.Text = "アップデートできませんでした: " + ex.Message;
+            ApplyUpdateButton.IsEnabled = true;
+            CheckUpdateButton.IsEnabled = true;
+        }
     }
 
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)

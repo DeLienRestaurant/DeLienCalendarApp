@@ -159,6 +159,26 @@
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
               <Button x:Name="CheckUpdateButton" Content="更新を確認" Padding="16,6" Margin="0,0,8,0"
                       Click="CheckUpdate_Click" />
+              <Button x:Name="ApplyUpdateButton" Content="アップデートする" Padding="18,6" Margin="0,0,8,0"
+                      Click="ApplyUpdate_Click" Visibility="Collapsed">
+                <Button.Template>
+                  <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="#5865F2" CornerRadius="4"
+                            Padding="{TemplateBinding Padding}">
+                      <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        TextElement.Foreground="White" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="#4650D8" />
+                      </Trigger>
+                      <Trigger Property="IsEnabled" Value="False">
+                        <Setter TargetName="Bd" Property="Opacity" Value="0.5" />
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </Button.Template>
+              </Button>
               <Button x:Name="OpenReleaseButton" Content="リリースページを開く" Padding="16,6"
                       Click="OpenRelease_Click" Visibility="Collapsed" />
             </StackPanel>

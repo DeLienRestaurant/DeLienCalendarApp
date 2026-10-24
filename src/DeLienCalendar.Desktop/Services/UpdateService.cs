@@ -1,11 +1,19 @@
 using System.Diagnostics;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Win32;
 
 namespace DeLienCalendar.Desktop.Services;
 
 /// <summary>利用可能な更新</summary>
-public sealed record UpdateInfo(string Version, string Tag, string ReleaseUrl, string? SetupDownloadUrl);
+public sealed record UpdateInfo(
+    string Version,
+    string Tag,
+    string ReleaseUrl,
+    string? SetupDownloadUrl,
+    string? ChecksumDownloadUrl,
+    bool IsPrerelease);
 
 /// <summary>
 /// GitHub Releases を使った更新確認。
@@ -83,21 +91,29 @@ public static class UpdateService
                 if (!Version.TryParse(tag.TrimStart('v', 'V'), out var version)) continue;
 
                 string? setupUrl = null;
+                string? checksumUrl = null;
                 if (release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var asset in assets.EnumerateArray())
                     {
                         var name = asset.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                        if (name.EndsWith("-setup.exe", StringComparison.OrdinalIgnoreCase) &&
-                            asset.TryGetProperty("browser_download_url", out var d))
+                        var url = asset.TryGetProperty("browser_download_url", out var d) ? d.GetString() : null;
+                        if (url is null) continue;
+
+                        if (name.EndsWith("-setup.exe", StringComparison.OrdinalIgnoreCase))
                         {
-                            setupUrl = d.GetString();
+                            setupUrl = url;
+                        }
+                        else if (string.Equals(name, "SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase))
+                        {
+                            checksumUrl = url;
                         }
                     }
                 }
 
                 var versionText = tag.TrimStart('v', 'V');
-                candidates.Add((isPrerelease, version, new UpdateInfo(versionText, tag, releaseUrl, setupUrl)));
+                candidates.Add((isPrerelease, version,
+                    new UpdateInfo(versionText, tag, releaseUrl, setupUrl, checksumUrl, isPrerelease)));
             }
 
             var chosen = candidates
@@ -146,5 +162,220 @@ public static class UpdateService
         {
             AppLog.Write("リリースページを開けませんでした: " + url, ex);
         }
+    }
+
+    // ---------- アプリ内アップデート ----------
+
+    /// <summary>ダウンロード専用（大きなファイル向けに長めのタイムアウト）</summary>
+    private static readonly HttpClient DownloadHttp = new() { Timeout = TimeSpan.FromMinutes(10) };
+
+    /// <summary>
+    /// インストーラをダウンロードして検証する。戻り値はダウンロードしたファイルのパス。
+    /// SHA256SUMS.txt が取得できた場合はハッシュを検証する。
+    /// </summary>
+    public static async Task<string> DownloadInstallerAsync(
+        UpdateInfo info, IProgress<int>? progress = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(info.SetupDownloadUrl))
+        {
+            throw new InvalidOperationException(
+                "このリリースにはインストーラが含まれていません。リリースページからダウンロードしてください。");
+        }
+
+        var directory = Path.Combine(AppPaths.DataDirectory, "updates");
+        Directory.CreateDirectory(directory);
+
+        // 以前のダウンロードを掃除する
+        foreach (var old in Directory.EnumerateFiles(directory))
+        {
+            try
+            {
+                File.Delete(old);
+            }
+            catch
+            {
+                // 使用中などで消せない場合は無視する
+            }
+        }
+
+        var fileName = $"DeLienCalendar-{info.Version}-setup.exe";
+        var filePath = Path.Combine(directory, fileName);
+
+        using (var response = await DownloadHttp
+                   .GetAsync(info.SetupDownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct)
+                   .ConfigureAwait(false))
+        {
+            response.EnsureSuccessStatusCode();
+
+            var total = response.Content.Headers.ContentLength ?? -1L;
+            await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            await using var target = File.Create(filePath);
+
+            var buffer = new byte[81920];
+            long received = 0;
+            int read;
+            while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+            {
+                await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                received += read;
+                if (total > 0) progress?.Report((int)(received * 100 / total));
+            }
+        }
+
+        progress?.Report(100);
+
+        var expected = await GetExpectedHashAsync(info.ChecksumDownloadUrl, fileName, ct).ConfigureAwait(false);
+        if (expected is null)
+        {
+            AppLog.Write("チェックサムを取得できないため、ダウンロードの検証をスキップしました。");
+            return filePath;
+        }
+
+        var actual = ComputeSha256(filePath);
+        if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                File.Delete(filePath);
+            }
+            catch
+            {
+                // 削除失敗は無視する
+            }
+            throw new InvalidDataException("ダウンロードしたファイルの検証に失敗しました（破損または改ざんの可能性があります）。");
+        }
+
+        AppLog.Write($"インストーラをダウンロードしました（SHA-256 一致）: {filePath}");
+        return filePath;
+    }
+
+    /// <summary>SHA256SUMS.txt から対象ファイルの期待ハッシュを取得する</summary>
+    private static async Task<string?> GetExpectedHashAsync(string? checksumUrl, string fileName, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(checksumUrl)) return null;
+
+        try
+        {
+            using var response = await DownloadHttp.GetAsync(checksumUrl, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            foreach (var line in text.Split('\n'))
+            {
+                var parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2) continue;
+                if (string.Equals(parts[1].TrimStart('*'), fileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return parts[0];
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("チェックサムの取得に失敗しました（検証をスキップ）", ex);
+        }
+
+        return null;
+    }
+
+    public static string ComputeSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var sha = SHA256.Create();
+        return Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// アプリを終了したあとにインストーラを実行し、完了後にアプリを起動し直す。
+    /// 呼び出し側はこの直後に Shutdown() すること。
+    /// </summary>
+    public static void LaunchInstaller(string installerPath)
+    {
+        var command = BuildUpdateCommand(installerPath, ResolveInstallTargetExe());
+
+        try
+        {
+            Process.Start(new ProcessStartInfo("cmd.exe", "/c " + command)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            });
+            AppLog.Write("アップデート用インストーラを起動しました: " + installerPath);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("インストーラを起動できませんでした", ex);
+            throw new InvalidOperationException("インストーラを起動できませんでした。", ex);
+        }
+    }
+
+    /// <summary>
+    /// インストーラ実行 → アプリ再起動を行う cmd.exe のコマンド文字列を組み立てる。
+    /// 自プロセスの終了を待つため、最初に数秒待機する。
+    /// </summary>
+    public static string BuildUpdateCommand(string installerPath, string? appExe)
+    {
+        var command = $"ping -n 6 127.0.0.1 >nul & \"{installerPath}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART";
+        if (!string.IsNullOrEmpty(appExe))
+        {
+            command += $" & start \"\" \"{appExe}\"";
+        }
+        return command;
+    }
+
+    /// <summary>インストール先のアンインストール情報（Inno Setup の AppId）</summary>
+    private const string UninstallKeyPath =
+        @"Software\Microsoft\Windows\CurrentVersion\Uninstall\{4C0B7A62-9E15-4C8F-A3D6-7B2E5F91C4A8}_is1";
+
+    /// <summary>
+    /// 更新後に起動し直すアプリのパスを求める。
+    /// インストーラ管理下ならそのインストール先、無ければインストーラの既定インストール先。
+    /// （ポータブル版からアップデートした場合も、新しいインストール先で起動できる）
+    /// </summary>
+    public static string ResolveInstallTargetExe()
+    {
+        var views = new[]
+        {
+            (RegistryHive.CurrentUser, RegistryView.Default),
+            (RegistryHive.LocalMachine, RegistryView.Registry64),
+            (RegistryHive.LocalMachine, RegistryView.Registry32),
+        };
+
+        foreach (var (hive, view) in views)
+        {
+            try
+            {
+                using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                using var key = baseKey.OpenSubKey(UninstallKeyPath);
+                if (key is null) continue;
+
+                if (key.GetValue("InstallLocation") is string location && !string.IsNullOrWhiteSpace(location))
+                {
+                    return Path.Combine(location.TrimEnd('\\'), "DeLienCalendar.exe");
+                }
+
+                if (key.GetValue("UninstallString") is string uninstallString)
+                {
+                    var uninstaller = uninstallString.Trim().Trim('"');
+                    var directory = Path.GetDirectoryName(uninstaller);
+                    if (!string.IsNullOrWhiteSpace(directory))
+                    {
+                        return Path.Combine(directory, "DeLienCalendar.exe");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Write("インストール先の取得に失敗しました", ex);
+            }
+        }
+
+        // 未インストール（ポータブル版）の場合はインストーラの既定インストール先
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Programs",
+            "DeLienCalendar",
+            "DeLienCalendar.exe");
     }
 }
