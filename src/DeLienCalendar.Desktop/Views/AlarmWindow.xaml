@@ -7,7 +7,7 @@
         ResizeMode="NoResize"
         Topmost="True"
         ShowInTaskbar="True"
-        Background="#F6F7FB">
+        Background="{DynamicResource AppBackgroundBrush}">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -15,13 +15,13 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <Border Grid.Row="0" Background="#E5484D" Padding="16,10">
-      <TextBlock Text="予定の時刻です" Foreground="White" FontSize="14" FontWeight="SemiBold" />
+    <Border Grid.Row="0" Background="{DynamicResource DangerHeaderBrush}" Padding="16,10">
+      <TextBlock Text="予定の時刻です" Foreground="{DynamicResource AccentForegroundBrush}" FontSize="14" FontWeight="SemiBold" />
     </Border>
 
     <StackPanel Grid.Row="1" Margin="20,16,20,0">
-      <TextBlock x:Name="TitleText" FontSize="22" FontWeight="Bold" Foreground="#1F2333" TextWrapping="Wrap" />
-      <TextBlock x:Name="DetailText" FontSize="13" Foreground="#5B6072" Margin="0,8,0,0" TextWrapping="Wrap" />
+      <TextBlock x:Name="TitleText" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" />
+      <TextBlock x:Name="DetailText" FontSize="13" Foreground="{DynamicResource MutedTextBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
     </StackPanel>
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,16">
@@ -31,17 +31,17 @@
               Click="StopButton_Click">
         <Button.Template>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Bd" Background="#E5484D" CornerRadius="4"
+            <Border x:Name="Bd" Background="{DynamicResource DangerBrush}" CornerRadius="4"
                     Padding="{TemplateBinding Padding}">
               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                TextElement.Foreground="White" />
+                                TextElement.Foreground="{DynamicResource AccentForegroundBrush}" />
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#C93A3F" />
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource DangerHoverBrush}" />
               </Trigger>
               <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="#A82F33" />
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource DangerHoverBrush}" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>

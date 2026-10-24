@@ -120,6 +120,26 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>アプリのテーマを WebView2 のカラースキームへ反映する（Web 側の prefers-color-scheme が変わる）</summary>
+    private void ApplyThemeToWebView()
+    {
+        if (!_webReady || Web.CoreWebView2 is null) return;
+
+        Web.CoreWebView2.Profile.PreferredColorScheme = ThemeService.IsDark
+            ? CoreWebView2PreferredColorScheme.Dark
+            : CoreWebView2PreferredColorScheme.Light;
+    }
+
+    private void OnThemeChanged()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(OnThemeChanged));
+            return;
+        }
+        ApplyThemeToWebView();
+    }
+
     private void CalendarTab_Checked(object sender, RoutedEventArgs e) => SelectTab(showSettings: false);
 
     private void SettingsTab_Checked(object sender, RoutedEventArgs e) => SelectTab(showSettings: true);
@@ -177,6 +197,9 @@ public partial class MainWindow : Window
             core.Settings.IsGeneralAutofillEnabled = false;
             core.NewWindowRequested += OnNewWindowRequested;
             core.NavigationStarting += OnNavigationStarting;
+
+            ApplyThemeToWebView();
+            ThemeService.Changed += OnThemeChanged;
 
             _webReady = true;
         }

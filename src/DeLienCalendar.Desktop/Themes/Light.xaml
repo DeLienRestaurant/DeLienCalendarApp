@@ -1,0 +1,24 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- ライトテーマ -->
+  <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F6F7FB" />
+  <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="SurfaceAltBrush" Color="#F0F1F7" />
+  <SolidColorBrush x:Key="CardBorderBrush" Color="#E2E5EC" />
+  <SolidColorBrush x:Key="TextBrush" Color="#1F2333" />
+  <SolidColorBrush x:Key="MutedTextBrush" Color="#7A8096" />
+  <SolidColorBrush x:Key="AccentBrush" Color="#5865F2" />
+  <SolidColorBrush x:Key="AccentHoverBrush" Color="#4650D8" />
+  <SolidColorBrush x:Key="AccentForegroundBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="AccentSoftBrush" Color="#E7E9F9" />
+  <SolidColorBrush x:Key="DangerBrush" Color="#E5484D" />
+  <SolidColorBrush x:Key="DangerHoverBrush" Color="#C93A3F" />
+  <SolidColorBrush x:Key="DangerForegroundBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="HintBackgroundBrush" Color="#E3E5EF" />
+  <SolidColorBrush x:Key="HeaderBrush" Color="#5865F2" />
+  <SolidColorBrush x:Key="TabActiveBackgroundBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="TabActiveForegroundBrush" Color="#4650D8" />
+  <SolidColorBrush x:Key="DangerHeaderBrush" Color="#E5484D" />
+
+</ResourceDictionary>

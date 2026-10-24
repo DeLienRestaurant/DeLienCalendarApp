@@ -8,6 +8,9 @@ public sealed class AppSettings
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    /// <summary>表示テーマ（system / light / dark）</summary>
+    public string AppTheme { get; set; } = ThemeService.SystemMode;
+
     /// <summary>接続先（既定: 本番）</summary>
     public string BaseUrl { get; set; } = "https://calendar.delien.xyz";
 
@@ -108,6 +111,7 @@ public sealed class AppSettings
         }
         SoundFile = SoundCatalog.Normalize(SoundFile);
         OutputDeviceId ??= AudioDeviceService.SystemDefault;
+        if (!ThemeService.All.Contains(AppTheme)) AppTheme = ThemeService.SystemMode;
         return this;
     }
 }

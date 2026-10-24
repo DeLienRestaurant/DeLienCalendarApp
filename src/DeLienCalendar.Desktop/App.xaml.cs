@@ -58,6 +58,9 @@ public partial class App : System.Windows.Application
 
         _settings = AppSettings.Load();
 
+        // ウィンドウを作る前にテーマを適用する
+        ThemeService.Apply(_settings.AppTheme);
+
         // 設定と実際の自動起動登録を一致させる
         if (_settings.StartWithWindows != StartupService.IsEnabled())
         {

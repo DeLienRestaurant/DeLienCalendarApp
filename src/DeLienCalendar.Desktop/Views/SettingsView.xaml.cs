@@ -32,6 +32,7 @@ public partial class SettingsView : UserControl
     private ApiClient? _api;
     private SyncService? _sync;
     private bool _initialized;
+    private bool _applyingTheme;
 
     public SettingsView()
     {
@@ -56,6 +57,11 @@ public partial class SettingsView : UserControl
             ReminderMinutes.Items.Add(choice.Label);
         }
 
+        foreach (var mode in ThemeService.All)
+        {
+            ThemeCombo.Items.Add(ThemeService.Label(mode));
+        }
+
         foreach (var style in NotificationStyles.All)
         {
             StyleCombo.Items.Add(NotificationStyles.Label(style));
@@ -77,6 +83,12 @@ public partial class SettingsView : UserControl
             StatusText.Text = "同期に失敗しました: " + message;
         });
         UpdateService.Changed += () => Dispatcher.Invoke(UpdateUpdateStatus);
+        ThemeService.Changed += () => Dispatcher.Invoke(() =>
+        {
+            // コードで生成した要素は自動で色が変わらないため作り直す
+            BuildChangelog();
+            BuildCalendarList();
+        });
 
         Refresh();
     }
@@ -93,6 +105,11 @@ public partial class SettingsView : UserControl
         ShowDescription.IsChecked = _settings.ShowDescription;
         ShowActions.IsChecked = _settings.ShowActions;
         AutoUpdateCheck.IsChecked = _settings.AutoUpdateCheck;
+
+        _applyingTheme = true;
+        var themeIndex = Array.IndexOf(ThemeService.All, _settings.AppTheme);
+        ThemeCombo.SelectedIndex = themeIndex >= 0 ? themeIndex : 0;
+        _applyingTheme = false;
         BaseUrlBox.Text = _settings.BaseUrl;
 
         var styleIndex = Array.IndexOf(NotificationStyles.All, _settings.NotificationStyle);
@@ -128,6 +145,7 @@ public partial class SettingsView : UserControl
         var panels = new Dictionary<string, UIElement>
         {
             ["general"] = PanelGeneral,
+            ["appearance"] = PanelAppearance,
             ["notification"] = PanelNotification,
             ["sound"] = PanelSound,
             ["calendar"] = PanelCalendar,
@@ -147,11 +165,24 @@ public partial class SettingsView : UserControl
         }
     }
 
+    private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_applyingTheme || _settings is null) return;
+
+        var index = ThemeCombo.SelectedIndex;
+        if (index < 0 || index >= ThemeService.All.Length) return;
+
+        var mode = ThemeService.All[index];
+        _settings.AppTheme = mode;
+        _settings.Save();
+        ThemeService.Apply(mode);
+    }
+
     // ---------- 更新履歴 ----------
 
-    private static readonly Brush AccentBrush = new SolidColorBrush(Color.FromRgb(0x46, 0x50, 0xD8));
-    private static readonly Brush TextBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3F, 0x52));
-    private static readonly Brush MutedBrush = new SolidColorBrush(Color.FromRgb(0x7A, 0x80, 0x96));
+    /// <summary>テーマのリソースからブラシを取得する（テーマ切替時は作り直す）</summary>
+    private static Brush ThemeBrush(string key) =>
+        Application.Current?.TryFindResource(key) as Brush ?? Brushes.Gray;
 
     private void BuildChangelog()
     {
@@ -165,7 +196,7 @@ public partial class SettingsView : UserControl
             {
                 Text = "更新履歴を読み込めませんでした（CHANGELOG.md が見つかりません）。",
                 FontSize = 12,
-                Foreground = MutedBrush,
+                Foreground = ThemeBrush("MutedTextBrush"),
                 TextWrapping = TextWrapping.Wrap,
             });
             return;
@@ -187,7 +218,7 @@ public partial class SettingsView : UserControl
                 Text = "v" + entry.Version,
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
-                Foreground = AccentBrush,
+                Foreground = ThemeBrush("AccentBrush"),
             });
 
             if (!string.IsNullOrEmpty(entry.Date))
@@ -196,7 +227,7 @@ public partial class SettingsView : UserControl
                 {
                     Text = entry.Date,
                     FontSize = 12,
-                    Foreground = MutedBrush,
+                    Foreground = ThemeBrush("MutedTextBrush"),
                     Margin = new Thickness(8, 3, 0, 0),
                 });
             }
@@ -205,11 +236,11 @@ public partial class SettingsView : UserControl
             {
                 header.Children.Add(new Border
                 {
-                    Background = new SolidColorBrush(Color.FromRgb(0xE7, 0xE9, 0xF9)),
+                    Background = ThemeBrush("AccentSoftBrush"),
                     CornerRadius = new CornerRadius(9),
                     Padding = new Thickness(8, 1, 8, 2),
                     Margin = new Thickness(8, 1, 0, 0),
-                    Child = new TextBlock { Text = "使用中", FontSize = 11, Foreground = AccentBrush },
+                    Child = new TextBlock { Text = "使用中", FontSize = 11, Foreground = ThemeBrush("AccentBrush") },
                 });
             }
 
@@ -221,7 +252,7 @@ public partial class SettingsView : UserControl
                 {
                     Text = "・" + item,
                     FontSize = 13,
-                    Foreground = TextBrush,
+                    Foreground = ThemeBrush("TextBrush"),
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Thickness(6, 1, 0, 1),
                 });
