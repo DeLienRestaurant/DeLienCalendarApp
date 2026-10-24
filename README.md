@@ -37,6 +37,22 @@ dotnet publish desktop\src\DeLienCalendar.Desktop\DeLienCalendar.Desktop.csproj 
   -c Release -r win-x64 --self-contained false -o desktop\dist\app
 ```
 
+### アイコン
+
+アプリアイコン（`src/DeLienCalendar.Desktop/Resources/app.ico`）は Web 版のロゴから生成しています。
+差し替える場合は元画像を更新して次を実行してください（16〜256px の 7 サイズを生成）。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\desktop\tools\make_icon.ps1
+```
+
+## リリース
+
+- バージョンは `src/DeLienCalendar.Desktop/DeLienCalendar.Desktop.csproj` の `<Version>` で管理します。
+- 配布物のビルドと GitHub Release の作成は、アプリ用リポジトリ（`DeLienCalendarApp`）側の
+  `release.yml` がタグ push を契機に実行します（このリポジトリには置いていません）。
+- アプリ内のバージョンは設定画面の下部に表示されます。
+
 ## インストール（未署名配布）
 
 コード署名証明書を使用しないため、MSIX ではなく **ZIP + インストールスクリプト**で配布します。

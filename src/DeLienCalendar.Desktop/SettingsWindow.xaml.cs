@@ -110,10 +110,12 @@ public partial class SettingsWindow : Window
 
     private void UpdateStatus()
     {
+        var version = typeof(SettingsWindow).Assembly.GetName().Version;
+        var versionText = version is null ? "" : $"v{version.Major}.{version.Minor}.{version.Build}　/　";
         var synced = _settings.LastSyncedAt;
-        StatusText.Text = synced is null
+        StatusText.Text = versionText + (synced is null
             ? "最終同期: 未同期"
-            : $"最終同期: {synced:yyyy/MM/dd HH:mm}";
+            : $"最終同期: {synced:yyyy/MM/dd HH:mm}");
     }
 
     private void SaveButton_Click(object sender, RoutedEventArgs e)
