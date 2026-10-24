@@ -25,12 +25,22 @@ if (Test-Path $dist) {
 }
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 
-$publishArgs = @($project, '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'false', '-o', $appDir)
-if ($Version -ne '') {
-    $publishArgs += "-p:Version=$Version"
+# -Version が未指定なら csproj の <Version> を使う（インストーラ名とアプリの版を揃える）
+if ($Version -eq '') {
+    [xml]$csprojXml = Get-Content -LiteralPath $project
+    $Version = @($csprojXml.Project.PropertyGroup.Version) | Where-Object { $_ } | Select-Object -First 1
+    if (-not [string]::IsNullOrWhiteSpace($Version)) {
+        Write-Host "csproj の Version を使用します: $Version"
+    }
+    else {
+        $Version = '0.0.0'
+    }
 }
 
-Write-Host "ビルドしています... (Version=$(if ($Version -ne '') { $Version } else { 'csproj の値' }))" -ForegroundColor Cyan
+$publishArgs = @($project, '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'false', '-o', $appDir)
+$publishArgs += "-p:Version=$Version"
+
+Write-Host "ビルドしています... (Version=$Version)" -ForegroundColor Cyan
 dotnet publish @publishArgs
 if ($LASTEXITCODE -ne 0) {
     throw 'dotnet publish に失敗しました。'
@@ -71,7 +81,7 @@ if ($WithInstaller) {
         throw 'Inno Setup (ISCC.exe) が見つかりません。https://jrsoftware.org/isdl.php からインストールしてください。'
     }
 
-    $installerVersion = if ($Version -ne '') { $Version } else { '0.0.0' }
+    $installerVersion = $Version
     Write-Host 'インストーラを作成しています...' -ForegroundColor Cyan
     & $iscc "/DAppVersion=$installerVersion" (Join-Path $root 'installer\setup.iss')
     if ($LASTEXITCODE -ne 0) {

@@ -143,7 +143,12 @@ public partial class MainWindow : Window
 
         try
         {
-            var result = await _auth.SignInAsync();
+            // ブラウザが開かなかった場合に備えて認証URLを画面に出す
+            var progress = new Progress<string>(url =>
+            {
+                LoginHint.Text = "ブラウザが開かない場合は、次のURLをコピーして開いてください。\n" + url;
+            });
+            var result = await _auth.SignInAsync(progress);
             SecureStore.SaveToken(result.Token);
             _api.Token = result.Token;
             _settings.UserName = result.User?.DiscordName;
