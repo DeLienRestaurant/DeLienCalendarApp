@@ -46,9 +46,16 @@ if ($LASTEXITCODE -ne 0) {
     throw 'dotnet publish に失敗しました。'
 }
 
-# 配布物に説明・ライセンス・セキュリティポリシーを同梱する
+# 配布物に説明・ライセンス・セキュリティポリシー・更新履歴を同梱する
 Copy-Item (Join-Path $root 'install.ps1') $appDir -Force
 Copy-Item (Join-Path $root 'README.md') $appDir -Force
+$changelog = Join-Path $root 'CHANGELOG.md'
+if (Test-Path $changelog) {
+    Copy-Item $changelog $appDir -Force
+}
+else {
+    Write-Warning 'CHANGELOG.md が見つかりません（アプリの更新履歴が表示されません）。'
+}
 foreach ($file in @('LICENSE', 'SECURITY.md')) {
     # 本リポジトリ（desktop/ 配下）とアプリ用リポジトリ（ルート配置）の両方に対応する
     $source = @((Join-Path $root $file), (Join-Path $repoRoot $file)) |

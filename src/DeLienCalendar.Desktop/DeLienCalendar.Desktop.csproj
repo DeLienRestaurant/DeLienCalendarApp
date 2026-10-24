@@ -7,13 +7,14 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- WinForms の暗黙 using を無効化し、WPF の型名と衝突しないようにする -->
+    <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <AssemblyName>DeLienCalendar</AssemblyName>
     <RootNamespace>DeLienCalendar.Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <AssemblyTitle>DeLien Calendar</AssemblyTitle>
     <Product>DeLien Calendar</Product>
     <Company>DeLien</Company>
@@ -29,6 +30,11 @@
 
   <ItemGroup>
     <Resource Include="Resources\app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 更新履歴はアプリと同じフォルダに置いて読み込む（desktop/CHANGELOG.md） -->
+    <None Include="..\..\CHANGELOG.md" Link="CHANGELOG.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using DeLienCalendar.Desktop.Models;
 using DeLienCalendar.Desktop.Services;
-using Microsoft.Win32;
 
 namespace DeLienCalendar.Desktop.Views;
 
@@ -105,9 +105,128 @@ public partial class SettingsView : UserControl
         ApplySoundToUi(_settings.SoundFile);
         LoadDevices(_settings.OutputDeviceId);
 
+        CurrentVersionText.Text = "v" + UpdateService.CurrentVersion.ToString(3);
+
         BuildCalendarList();
+        BuildChangelog();
         UpdateStatus();
         UpdateUpdateStatus();
+    }
+
+    // ---------- ジャンル切り替え ----------
+
+    private void Category_Checked(object sender, RoutedEventArgs e)
+    {
+        if (PanelGeneral is null || sender is not RadioButton button) return;
+        SelectCategory(button.Tag as string ?? "general");
+    }
+
+    private void SelectCategory(string category)
+    {
+        if (PanelGeneral is null) return;
+
+        var panels = new Dictionary<string, UIElement>
+        {
+            ["general"] = PanelGeneral,
+            ["notification"] = PanelNotification,
+            ["sound"] = PanelSound,
+            ["calendar"] = PanelCalendar,
+            ["version"] = PanelVersion,
+        };
+
+        foreach (var (key, panel) in panels)
+        {
+            panel.Visibility = key == category ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        if (category == "calendar") BuildCalendarList();
+        if (category == "version")
+        {
+            UpdateUpdateStatus();
+            BuildChangelog();
+        }
+    }
+
+    // ---------- 更新履歴 ----------
+
+    private static readonly Brush AccentBrush = new SolidColorBrush(Color.FromRgb(0x46, 0x50, 0xD8));
+    private static readonly Brush TextBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3F, 0x52));
+    private static readonly Brush MutedBrush = new SolidColorBrush(Color.FromRgb(0x7A, 0x80, 0x96));
+
+    private void BuildChangelog()
+    {
+        if (ChangelogPanel is null) return;
+        ChangelogPanel.Children.Clear();
+
+        var entries = ChangelogService.Load();
+        if (entries.Count == 0)
+        {
+            ChangelogPanel.Children.Add(new TextBlock
+            {
+                Text = "更新履歴を読み込めませんでした（CHANGELOG.md が見つかりません）。",
+                FontSize = 12,
+                Foreground = MutedBrush,
+                TextWrapping = TextWrapping.Wrap,
+            });
+            return;
+        }
+
+        var current = UpdateService.CurrentVersion;
+
+        foreach (var entry in entries)
+        {
+            // アセンブリのバージョンは 4 桁（0.3.0.0）なので、主要3桁で比較する
+            var isCurrent = Version.TryParse(entry.Version, out var version)
+                && version.Major == current.Major
+                && version.Minor == current.Minor
+                && version.Build == current.Build;
+
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 6) };
+            header.Children.Add(new TextBlock
+            {
+                Text = "v" + entry.Version,
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Foreground = AccentBrush,
+            });
+
+            if (!string.IsNullOrEmpty(entry.Date))
+            {
+                header.Children.Add(new TextBlock
+                {
+                    Text = entry.Date,
+                    FontSize = 12,
+                    Foreground = MutedBrush,
+                    Margin = new Thickness(8, 3, 0, 0),
+                });
+            }
+
+            if (isCurrent)
+            {
+                header.Children.Add(new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(0xE7, 0xE9, 0xF9)),
+                    CornerRadius = new CornerRadius(9),
+                    Padding = new Thickness(8, 1, 8, 2),
+                    Margin = new Thickness(8, 1, 0, 0),
+                    Child = new TextBlock { Text = "使用中", FontSize = 11, Foreground = AccentBrush },
+                });
+            }
+
+            ChangelogPanel.Children.Add(header);
+
+            foreach (var item in entry.Items)
+            {
+                ChangelogPanel.Children.Add(new TextBlock
+                {
+                    Text = "・" + item,
+                    FontSize = 13,
+                    Foreground = TextBrush,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(6, 1, 0, 1),
+                });
+            }
+        }
     }
 
     // ---------- 音声 ----------
