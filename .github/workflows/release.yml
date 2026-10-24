@@ -1,5 +1,18 @@
 name: Release Desktop App
 
+# アプリ配布用リポジトリ（DeLienCalendarApp）の .github/workflows/release.yml に置いて使います。
+# このファイルは DeLienCalender リポジトリの同期対象外です
+# （同期は src/・installer/ などを上書きするだけで .github/ は保持します）。
+#
+# 使い方:
+#   1) タグ push でリリース:  git tag v0.1.0 && git push origin v0.1.0
+#   2) 手動実行（Actions > Release Desktop App > Run workflow）でバージョンを入力
+#
+# 出力:
+#   - DeLienCalendar-<version>-setup.exe  … インストーラ（インストール先を選択可能）
+#   - DeLienCalendar-win-x64.zip          … ポータブル版
+#   - SHA256SUMS.txt
+
 on:
   push:
     tags:
@@ -26,11 +39,11 @@ concurrency:
 env:
   DOTNET_VERSION: '8.0.x'
   PROJECT: src/DeLienCalendar.Desktop/DeLienCalendar.Desktop.csproj
-  RUNTIME: win-x64
 
 jobs:
   release:
     runs-on: windows-latest
+
     steps:
       - name: 1. Checkout
         uses: actions/checkout@v4
@@ -42,6 +55,7 @@ jobs:
         shell: pwsh
         run: |
           $eventName = '${{ github.event_name }}'
+
           if ($eventName -eq 'push') {
             $version = '${{ github.ref_name }}'.TrimStart('v')
           }
@@ -52,49 +66,49 @@ jobs:
             [xml]$csproj = Get-Content -LiteralPath '${{ env.PROJECT }}'
             $version = @($csproj.Project.PropertyGroup.Version) | Where-Object { $_ } | Select-Object -First 1
           }
+
           if ([string]::IsNullOrWhiteSpace($version)) {
             throw 'バージョンを決定できませんでした。workflow_dispatch で version を指定してください。'
           }
+
           [xml]$csprojCheck = Get-Content -LiteralPath '${{ env.PROJECT }}'
           $csprojVersion = @($csprojCheck.Project.PropertyGroup.Version) | Where-Object { $_ } | Select-Object -First 1
           if ($csprojVersion -and $csprojVersion -ne $version) {
             Write-Host "::warning::タグ/入力 ($version) と csproj の Version ($csprojVersion) が一致しません。"
           }
+
           "value=$version" >> $env:GITHUB_OUTPUT
           "tag=v$version"  >> $env:GITHUB_OUTPUT
+          Write-Host "リリースバージョン: v$version"
 
       - name: 3. Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: 4. Publish
+      - name: 4. Install Inno Setup
         shell: pwsh
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          dotnet publish $env:PROJECT -c Release -r $env:RUNTIME --self-contained false `
-            -p:Version=$env:VERSION -o dist/app
-          if ($LASTEXITCODE -ne 0) { throw "dotnet publish に失敗しました。" }
-
-      - name: 5. Package
-        shell: pwsh
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($file in @('install.ps1', 'README.md', 'LICENSE', 'SECURITY.md')) {
-            if (Test-Path $file) { Copy-Item $file dist/app/ -Force }
-            else { Write-Host "::warning::$file が見つかりません。" }
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup のインストールに失敗しました。' }
+          if (-not (Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
+            throw 'ISCC.exe が見つかりません。'
           }
-          Compress-Archive -Path dist/app/* -DestinationPath "dist/DeLienCalendar-$env:VERSION-win-x64.zip" -Force
+
+      - name: 5. Build ZIP and installer
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\build.ps1 -Configuration Release -Version $env:VERSION -WithInstaller
+          Get-ChildItem dist -File | Select-Object Name, Length | Format-Table | Out-String | Write-Host
 
       - name: 6. Checksums
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $lines = Get-ChildItem dist/*.zip | ForEach-Object {
+          $lines = Get-ChildItem dist -File -Include '*.zip', '*-setup.exe' | ForEach-Object {
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
           }
           $lines | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
@@ -109,11 +123,30 @@ jobs:
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease }}
           body: |
             ## インストール
-            1. `DeLienCalendar-*-win-x64.zip` をダウンロードして展開
-            2. フォルダ内で `install.ps1` を実行（管理者権限不要）
-            **動作要件**: Windows 10 1809 以降 / 11、.NET 8 デスクトップランタイム、WebView2 ランタイム
-            > 未署名のため SmartScreen の警告が表示される場合があります。詳細は SECURITY.md を参照。
+
+            下の `DeLienCalendar-${{ steps.version.outputs.value }}-setup.exe` を実行し、
+            ウィザードに従ってください（インストール先は自由に指定できます／管理者権限不要）。
+
+            コマンドラインから入れる場合:
+
+            ```powershell
+            .\DeLienCalendar-${{ steps.version.outputs.value }}-setup.exe /VERYSILENT /DIR="D:\Apps\DeLienCalendar"
+            ```
+
+            **動作要件**: Windows 10 1809 以降 / Windows 11、[.NET 8 デスクトップランタイム](https://dotnet.microsoft.com/download/dotnet/8.0)、WebView2 ランタイム
+
+            ### ポータブル版
+
+            インストーラを使わない場合は `DeLienCalendar-win-x64.zip` を展開し、
+            そのまま `DeLienCalendar.exe` を実行してください。
+
+            > このビルドはコード署名を行っていないため、SmartScreen の警告が表示される場合があります。
+            > 配布元がこのリポジトリであることを確認したうえで「詳細情報」→「実行」を選択してください。
+            > 詳細は SECURITY.md を参照してください。
+
+            `SHA256SUMS.txt` でダウンロードしたファイルを検証できます。
           files: |
-            dist/DeLienCalendar-*-win-x64.zip
+            dist/DeLienCalendar-*-setup.exe
+            dist/DeLienCalendar-win-x64.zip
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
