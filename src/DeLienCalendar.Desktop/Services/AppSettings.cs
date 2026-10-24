@@ -26,8 +26,17 @@ public sealed class AppSettings
     /// <summary>通知スタイル: toast（標準トースト）/ alarm（ループ音アラーム）/ silent（無音）</summary>
     public string NotificationStyle { get; set; } = NotificationStyles.Toast;
 
-    /// <summary>通知音（ms-winsoundevent 名）。スタイルが toast のときのみ使用する。</summary>
-    public string SoundName { get; set; } = "Notification.Default";
+    /// <summary>通知音（<c>builtin:Alarm01</c> または <c>custom:C:\path\sound.wav</c>）</summary>
+    public string SoundFile { get; set; } = SoundCatalog.DefaultSound;
+
+    /// <summary>再生に使う出力デバイス ID（空文字は Windows の既定デバイス）</summary>
+    public string OutputDeviceId { get; set; } = AudioDeviceService.SystemDefault;
+
+    /// <summary>起動時に更新を確認する</summary>
+    public bool AutoUpdateCheck { get; set; } = true;
+
+    /// <summary>前回の更新確認時刻</summary>
+    public DateTime? LastUpdateCheck { get; set; }
 
     /// <summary>通知本文にカレンダー名を含める</summary>
     public bool ShowCalendarName { get; set; } = true;
@@ -97,7 +106,8 @@ public sealed class AppSettings
         {
             NotificationStyle = AlarmEnabled ? NotificationStyles.Alarm : NotificationStyles.Toast;
         }
-        if (string.IsNullOrWhiteSpace(SoundName)) SoundName = "Notification.Default";
+        SoundFile = SoundCatalog.Normalize(SoundFile);
+        OutputDeviceId ??= AudioDeviceService.SystemDefault;
         return this;
     }
 }

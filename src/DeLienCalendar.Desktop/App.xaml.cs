@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Threading;
+using DeLienCalendar.Desktop.Models;
 using DeLienCalendar.Desktop.Services;
+using DeLienCalendar.Desktop.Views;
 using Microsoft.Toolkit.Uwp.Notifications;
 
 namespace DeLienCalendar.Desktop;
@@ -10,7 +12,6 @@ public partial class App : System.Windows.Application
     private SingleInstance? _singleInstance;
     private TrayService? _tray;
     private MainWindow? _mainWindow;
-    private SettingsWindow? _settingsWindow;
     private AppSettings _settings = new();
     private ApiClient? _api;
     private SyncService? _sync;
@@ -27,17 +28,23 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        // タスクスケジューラから起動された「アラーム表示のみ」モード
-        if (TryHandleNotifyMode(e.Args))
+        // タスクスケジューラから起動された「ヘッドレス同期」モード
+        if (TryHandleSyncMode(e.Args))
         {
             Shutdown();
             return;
         }
 
-        // タスクスケジューラから起動された「ヘッドレス同期」モード
-        if (TryHandleSyncMode(e.Args))
+        // タスクスケジューラから起動された「アラーム表示のみ」モード
+        var notifyMode = HandleNotifyMode(e.Args);
+        if (notifyMode == NotifyMode.Handled)
         {
             Shutdown();
+            return;
+        }
+        if (notifyMode == NotifyMode.Playing)
+        {
+            // 音声の再生が終わったら自分で Shutdown する
             return;
         }
 
@@ -63,6 +70,7 @@ public partial class App : System.Windows.Application
         _tray = new TrayService(StartupService.IsEnabled());
         _tray.OpenRequested += ShowMainWindow;
         _tray.SettingsRequested += ShowSettings;
+        _tray.UpdateRequested += OnUpdateRequested;
         _tray.ReLoginRequested += OnReLoginRequested;
         _tray.ExitRequested += ExitApp;
         _tray.AutoStartToggled += OnAutoStartToggled;
@@ -81,6 +89,9 @@ public partial class App : System.Windows.Application
         {
             ShowMainWindow();
         }
+
+        // 起動時に更新を確認する（設定が有効なら 24 時間に 1 回）
+        _ = CheckUpdatesAsync(force: false);
     }
 
     /// <summary>保存済みの端末トークンを検証し、ログイン状態の確定と同期開始を行う</summary>
@@ -140,28 +151,95 @@ public partial class App : System.Windows.Application
         return true;
     }
 
-    /// <summary>--notify {eventId} で起動された場合はトーストだけ表示して終了する</summary>
-    private static bool TryHandleNotifyMode(string[] args)
+    /// <summary>--notify {eventId} で起動された場合のモード</summary>
+    private enum NotifyMode
+    {
+        /// <summary>アラームモードではない</summary>
+        None,
+        /// <summary>通知を出し終えた（すぐ終了してよい）</summary>
+        Handled,
+        /// <summary>音声を再生中（再生完了後に Shutdown する）</summary>
+        Playing,
+    }
+
+    /// <summary>
+    /// --notify {eventId} で起動された場合はトーストとアラーム音を出して終了する。
+    /// トーストは無音で表示し、音は出力デバイスを指定してアプリ側で再生する。
+    /// </summary>
+    private NotifyMode HandleNotifyMode(string[] args)
     {
         var index = Array.FindIndex(args, a => string.Equals(a, "--notify", StringComparison.OrdinalIgnoreCase));
-        if (index < 0) return false;
+        if (index < 0) return NotifyMode.None;
 
         var settings = AppSettings.Load();
-        if (!settings.NotificationsEnabled) return true;
+        if (!settings.NotificationsEnabled) return NotifyMode.Handled;
 
-        var cache = EventCache.Load();
+        ApiEvent? calendarEvent = null;
         if (index + 1 < args.Length && int.TryParse(args[index + 1], out var eventId))
         {
-            var ev = cache.Events.FirstOrDefault(x => x.Id == eventId);
-            if (ev is not null)
-            {
-                NotificationService.ShowEventReminder(ev, settings);
-                return true;
-            }
+            calendarEvent = EventCache.Load().Events.FirstOrDefault(x => x.Id == eventId);
         }
 
-        NotificationService.Show("DeLien Calendar", "予定の時刻になりました。", 0, settings);
-        return true;
+        if (calendarEvent is not null)
+        {
+            NotificationService.ShowEventReminder(calendarEvent, settings);
+        }
+        else
+        {
+            NotificationService.Show("DeLien Calendar", "予定の時刻になりました。", 0, settings);
+        }
+
+        if (settings.NotificationStyle == NotificationStyles.Silent) return NotifyMode.Handled;
+
+        var soundPath = SoundCatalog.ResolvePath(settings.SoundFile);
+        if (soundPath is null)
+        {
+            AppLog.Write($"通知音が見つかりません: {settings.SoundFile}");
+            return NotifyMode.Handled;
+        }
+
+        if (settings.NotificationStyle == NotificationStyles.Alarm)
+        {
+            // 停止されるまでループ再生するウィンドウを出す
+            var window = new AlarmWindow(
+                calendarEvent?.Title ?? "DeLien Calendar",
+                calendarEvent is null ? "予定の時刻になりました。" : BuildAlarmDetail(calendarEvent),
+                soundPath,
+                settings.OutputDeviceId);
+            window.ShowDialog();
+            return NotifyMode.Handled;
+        }
+
+        // トースト: 1回だけ再生してから終了する
+        var player = new AlarmPlayer();
+        _ = PlayOnceThenShutdownAsync(player, soundPath, settings.OutputDeviceId);
+        return NotifyMode.Playing;
+    }
+
+    private static string BuildAlarmDetail(ApiEvent? calendarEvent)
+    {
+        if (calendarEvent is null) return "";
+        var time = calendarEvent.IsAllDay
+            ? $"{calendarEvent.StartLocal:M月d日(ddd)} 終日"
+            : $"{calendarEvent.StartLocal:M月d日(ddd) HH:mm} - {calendarEvent.EndLocal:HH:mm}";
+        return string.IsNullOrWhiteSpace(calendarEvent.CalendarName) ? time : $"{time} / {calendarEvent.CalendarName}";
+    }
+
+    private async Task PlayOnceThenShutdownAsync(AlarmPlayer player, string path, string deviceId)
+    {
+        try
+        {
+            await player.PlayAsync(path, deviceId, loop: false, maxDuration: TimeSpan.FromSeconds(30));
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("通知音の再生に失敗しました", ex);
+        }
+        finally
+        {
+            player.Dispose();
+            Dispatcher.Invoke(Shutdown);
+        }
     }
 
     /// <summary>--sync で起動された場合はヘッドレス同期だけ行って終了する</summary>
@@ -238,24 +316,9 @@ public partial class App : System.Windows.Application
 
     private void ShowSettings()
     {
-        if (_sync is null || _api is null) return;
-
-        if (_settingsWindow is { IsLoaded: true })
-        {
-            _settingsWindow.Activate();
-            return;
-        }
-
-        _settingsWindow = new SettingsWindow(_settings, _api, _sync) { Owner = _mainWindow };
-        _settingsWindow.SignedOut += () =>
-        {
-            _sync.Stop();
-            _settingsWindow = null;
-            _mainWindow?.RequestReLogin();
-            ShowMainWindow();
-        };
-        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
-        _settingsWindow.ShowDialog();
+        // 設定はメインウィンドウのタブとして開く
+        _mainWindow?.OpenSettingsTab();
+        ShowMainWindow();
     }
 
     private void OnReLoginRequested()
@@ -288,6 +351,33 @@ public partial class App : System.Windows.Application
         _settings.Save();
         StartupService.SetEnabled(enabled);
         _tray?.RefreshAutoStart(enabled);
+    }
+
+    /// <summary>更新確認（起動時は 24 時間に 1 回、手動実行時は強制）</summary>
+    private async Task CheckUpdatesAsync(bool force)
+    {
+        var hasUpdate = await UpdateService.CheckAsync(_settings, force);
+        var info = UpdateService.LatestAvailable;
+
+        if (hasUpdate && info is not null)
+        {
+            _tray?.ShowBalloon("DeLien Calendar",
+                $"新しいバージョン v{info.Version} があります。「設定」タブから確認できます。");
+            return;
+        }
+
+        if (force)
+        {
+            var message = UpdateService.LastError is { } error
+                ? $"更新を確認できませんでした: {error}"
+                : "最新バージョンです。";
+            _tray?.ShowBalloon("DeLien Calendar", message);
+        }
+    }
+
+    private async void OnUpdateRequested()
+    {
+        await CheckUpdatesAsync(force: true);
     }
 
     private void ExitApp()

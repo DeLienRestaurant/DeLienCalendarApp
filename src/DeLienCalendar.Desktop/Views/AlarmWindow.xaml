@@ -1,0 +1,52 @@
+<Window x:Class="DeLienCalendar.Desktop.Views.AlarmWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DeLien Calendar - アラーム"
+        Height="240" Width="460"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Topmost="True"
+        ShowInTaskbar="True"
+        Background="#F6F7FB">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <Border Grid.Row="0" Background="#E5484D" Padding="16,10">
+      <TextBlock Text="予定の時刻です" Foreground="White" FontSize="14" FontWeight="SemiBold" />
+    </Border>
+
+    <StackPanel Grid.Row="1" Margin="20,16,20,0">
+      <TextBlock x:Name="TitleText" FontSize="22" FontWeight="Bold" Foreground="#1F2333" TextWrapping="Wrap" />
+      <TextBlock x:Name="DetailText" FontSize="13" Foreground="#5B6072" Margin="0,8,0,0" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,16">
+      <Button x:Name="SnoozeButton" Content="スヌーズ (5分)" Padding="16,8" Margin="0,0,10,0"
+              Click="SnoozeButton_Click" />
+      <Button x:Name="StopButton" Content="停止" Padding="24,8"
+              Click="StopButton_Click">
+        <Button.Template>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="#E5484D" CornerRadius="4"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                TextElement.Foreground="White" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#C93A3F" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#A82F33" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Button.Template>
+      </Button>
+    </StackPanel>
+  </Grid>
+</Window>

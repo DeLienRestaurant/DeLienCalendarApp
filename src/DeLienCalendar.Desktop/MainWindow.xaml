@@ -7,38 +7,87 @@
         MinHeight="520" MinWidth="760"
         WindowStartupLocation="CenterScreen"
         Background="#F6F7FB">
+
+  <Window.Resources>
+    <Style x:Key="TabButton" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="#FFFFFF" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Padding" Value="16,7" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#FFFFFF" />
+                <Setter Property="Foreground" Value="#4650D8" />
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+
   <Grid>
-    <wv2:WebView2 x:Name="Web" Visibility="Hidden" />
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
 
-    <Border x:Name="LoginPanel" Background="#F6F7FB">
-      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="440">
-        <TextBlock Text="DeLien Calendar"
-                   FontSize="30" FontWeight="Bold" Foreground="#1F2333"
-                   HorizontalAlignment="Center" />
-        <TextBlock Text="でりえんの予定をデスクトップから。"
-                   FontSize="14" Foreground="#5B6072" Margin="0,8,0,28"
-                   HorizontalAlignment="Center" />
-
-        <TextBlock x:Name="LoginMessage"
-                   Text="この端末を Discord アカウントに連携します。"
-                   TextWrapping="Wrap" Foreground="#3A3F52" FontSize="14"
-                   Margin="0,0,0,20" />
-
-        <Button x:Name="LoginButton" Content="Discord でログイン"
-                Click="LoginButton_Click"
-                Height="46" FontSize="15" FontWeight="SemiBold"
-                Foreground="White" Background="#5865F2" BorderThickness="0"
-                Cursor="Hand" />
-
-        <ProgressBar x:Name="LoginProgress" IsIndeterminate="True"
-                     Height="4" Margin="0,16,0,0" Visibility="Collapsed"
-                     Foreground="#5865F2" Background="#E3E5EF" BorderThickness="0" />
-
-        <TextBlock x:Name="LoginHint"
-                   Text="ブラウザが開きます。Discord でログインし「この端末を許可する」を押してください。"
-                   TextWrapping="Wrap" Foreground="#8A8FA3" FontSize="12"
-                   Margin="0,20,0,0" />
+    <Border Grid.Row="0" Background="#5865F2" Padding="10,6">
+      <StackPanel Orientation="Horizontal">
+        <RadioButton x:Name="CalendarTab" Content="カレンダー" GroupName="MainTabs"
+                     Style="{StaticResource TabButton}" IsChecked="True"
+                     Checked="CalendarTab_Checked" />
+        <RadioButton x:Name="SettingsTab" Content="設定" GroupName="MainTabs"
+                     Style="{StaticResource TabButton}" Margin="4,0,0,0"
+                     Checked="SettingsTab_Checked" />
       </StackPanel>
     </Border>
+
+    <Grid Grid.Row="1">
+      <wv2:WebView2 x:Name="Web" Visibility="Hidden" />
+
+      <Border x:Name="LoginPanel" Background="#F6F7FB">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="440">
+          <TextBlock Text="DeLien Calendar"
+                     FontSize="30" FontWeight="Bold" Foreground="#1F2333"
+                     HorizontalAlignment="Center" />
+          <TextBlock Text="でりえんの予定をデスクトップから。"
+                     FontSize="14" Foreground="#5B6072" Margin="0,8,0,28"
+                     HorizontalAlignment="Center" />
+
+          <TextBlock x:Name="LoginMessage"
+                     Text="この端末を Discord アカウントに連携します。"
+                     TextWrapping="Wrap" Foreground="#3A3F52" FontSize="14"
+                     Margin="0,0,0,20" />
+
+          <Button x:Name="LoginButton" Content="Discord でログイン"
+                  Click="LoginButton_Click"
+                  Height="46" FontSize="15" FontWeight="SemiBold"
+                  Foreground="White" Background="#5865F2" BorderThickness="0"
+                  Cursor="Hand" />
+
+          <ProgressBar x:Name="LoginProgress" IsIndeterminate="True"
+                       Height="4" Margin="0,16,0,0" Visibility="Collapsed"
+                       Foreground="#5865F2" Background="#E3E5EF" BorderThickness="0" />
+
+          <TextBlock x:Name="LoginHint"
+                     Text="ブラウザが開きます。Discord でログインし「この端末を許可する」を押してください。"
+                     TextWrapping="Wrap" Foreground="#8A8FA3" FontSize="12"
+                     Margin="0,20,0,0" />
+        </StackPanel>
+      </Border>
+
+      <Grid x:Name="SettingsHost" Background="#F6F7FB" Visibility="Collapsed" />
+    </Grid>
   </Grid>
 </Window>

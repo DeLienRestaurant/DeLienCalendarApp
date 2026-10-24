@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using DeLienCalendar.Desktop.Services;
+using DeLienCalendar.Desktop.Views;
 using Microsoft.Web.WebView2.Core;
 
 namespace DeLienCalendar.Desktop;
@@ -13,6 +14,7 @@ public partial class MainWindow : Window
     private readonly SyncService _sync;
     private readonly DesktopAuthService _auth;
 
+    private SettingsView? _settingsView;
     private bool _webReady;
     private bool _forceClose;
     private bool _sessionActive;
@@ -20,21 +22,49 @@ public partial class MainWindow : Window
 
     public MainWindow(AppSettings settings, ApiClient api, SyncService sync)
     {
-        InitializeComponent();
         _settings = settings;
         _api = api;
         _sync = sync;
         _auth = new DesktopAuthService(_api);
 
+        InitializeComponent();
+
+        // 設定タブの中身（アプリ内で完結する設定画面）
+        _settingsView = new SettingsView();
+        SettingsHost.Children.Add(_settingsView);
+        _settingsView.Initialize(_settings, _api, _sync);
+        _settingsView.SignedOut += OnSettingsSignedOut;
+
         Loaded += OnLoadedAsync;
         Closing += OnClosing;
+
+        SelectTab(showSettings: false);
     }
 
     /// <summary>ログイン状態が変わったとき（Discord 表示名 / 未ログインは null）</summary>
     public event Action<string?>? LoginStateChanged;
 
+    /// <summary>設定タブを開く（トレイメニューから呼ばれる）</summary>
+    public void OpenSettingsTab()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(OpenSettingsTab));
+            return;
+        }
+        SettingsTab.IsChecked = true;
+        SelectTab(showSettings: true);
+    }
+
     public void ShowFromTray()
     {
+        // 単一インスタンスの通知はバックグラウンドスレッドから来るため、UI スレッドへ委譲する
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(ShowFromTray));
+            return;
+        }
+
         Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
@@ -64,6 +94,7 @@ public partial class MainWindow : Window
         {
             AppLog.Write("WebView2 のリセットに失敗しました", ex);
         }
+        CalendarTab.IsChecked = true;
         LoginStateChanged?.Invoke(null);
         SetSessionActive(false, "端末の連携を解除しました。もう一度ログインしてください。");
     }
@@ -87,6 +118,44 @@ public partial class MainWindow : Window
         {
             ShowLoginPanel(_loginMessage);
         }
+    }
+
+    private void CalendarTab_Checked(object sender, RoutedEventArgs e) => SelectTab(showSettings: false);
+
+    private void SettingsTab_Checked(object sender, RoutedEventArgs e) => SelectTab(showSettings: true);
+
+    /// <summary>「カレンダー」タブと「設定」タブを切り替える</summary>
+    private void SelectTab(bool showSettings)
+    {
+        // InitializeComponent 中はまだ生成されていないため、その場合は何もしない
+        if (SettingsHost is null || _settingsView is null) return;
+
+        if (showSettings)
+        {
+            _settingsView.Refresh();
+            SettingsHost.Visibility = Visibility.Visible;
+            Web.Visibility = Visibility.Hidden;
+            LoginPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        SettingsHost.Visibility = Visibility.Collapsed;
+        if (_sessionActive)
+        {
+            LoginPanel.Visibility = Visibility.Collapsed;
+            if (_webReady) Web.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            ShowLoginPanel(_loginMessage);
+        }
+    }
+
+    private void OnSettingsSignedOut()
+    {
+        _sync.Stop();
+        CalendarTab.IsChecked = true;
+        RequestReLogin();
     }
 
     private async void OnLoadedAsync(object sender, RoutedEventArgs e)

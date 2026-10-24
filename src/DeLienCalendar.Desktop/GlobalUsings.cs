@@ -7,3 +7,5 @@ global using MessageBoxImage = System.Windows.MessageBoxImage;
 global using CheckBox = System.Windows.Controls.CheckBox;
 global using ComboBox = System.Windows.Controls.ComboBox;
 global using Button = System.Windows.Controls.Button;
+global using UserControl = System.Windows.Controls.UserControl;
+global using OpenFileDialog = Microsoft.Win32.OpenFileDialog;

@@ -6,7 +6,11 @@ using Windows.UI.Notifications;
 
 namespace DeLienCalendar.Desktop.Services;
 
-/// <summary>Windows ネイティブのトースト通知 / アラーム表示</summary>
+/// <summary>
+/// Windows ネイティブのトースト通知。
+/// 音は <see cref="AlarmPlayer"/> 側で再生するため、トーストは常に無音で表示する
+/// （トーストでは任意の音声ファイル・出力デバイスを指定できないため）。
+/// </summary>
 public static class NotificationService
 {
     private const string Group = "delien-calendar";
@@ -68,14 +72,10 @@ public static class NotificationService
 
     private static string BuildToastXml(string title, IReadOnlyList<string> bodyLines, int eventId, AppSettings settings)
     {
-        var style = settings.NotificationStyle;
-        var isAlarm = style == NotificationStyles.Alarm;
-        var isSilent = style == NotificationStyles.Silent;
-
+        // 音と停止操作はアプリ側（アラームウィンドウ）が担当するため、
+        // トーストは通常表示・無音にする（alarm シナリオにすると二重に煩わしくなる）
         var xml = new StringBuilder();
-        xml.Append(isAlarm
-            ? "<toast scenario=\"alarm\" duration=\"long\" activationType=\"foreground\">"
-            : "<toast duration=\"long\" activationType=\"foreground\">");
+        xml.Append("<toast duration=\"long\" activationType=\"foreground\">");
 
         xml.Append("<visual><binding template=\"ToastGeneric\">");
         xml.Append($"<text>{Escape(title)}</text>");
@@ -96,52 +96,11 @@ public static class NotificationService
             xml.Append("</actions>");
         }
 
-        if (isAlarm)
-        {
-            xml.Append("<audio src=\"ms-winsoundevent:Notification.Looping.Alarm\" loop=\"true\"/>");
-        }
-        else if (isSilent)
-        {
-            xml.Append("<audio silent=\"true\"/>");
-        }
-        else
-        {
-            xml.Append($"<audio src=\"ms-winsoundevent:{SoundEventName(settings.SoundName)}\"/>");
-        }
-
+        // 音はアプリ側で再生するため常に無音
+        xml.Append("<audio silent=\"true\"/>");
         xml.Append("</toast>");
         return xml.ToString();
     }
 
-    /// <summary>設定値を ms-winsoundevent 名へ正規化する（不正値は既定音）</summary>
-    private static string SoundEventName(string? sound)
-    {
-        if (string.IsNullOrWhiteSpace(sound)) return Sounds.Default;
-        return Sounds.All.Contains(sound) ? sound : Sounds.Default;
-    }
-
     private static string Escape(string value) => System.Security.SecurityElement.Escape(value) ?? "";
-}
-
-/// <summary>選択可能な通知音（ms-winsoundevent）</summary>
-public static class Sounds
-{
-    public const string Default = "Notification.Default";
-    public const string Reminder = "Notification.Reminder";
-    public const string Alarm = "Notification.Looping.Alarm";
-    public const string Alarm2 = "Notification.Looping.Alarm2";
-    public const string Mail = "Notification.Mail";
-    public const string IM = "Notification.IM";
-
-    public static readonly string[] All = { Default, Reminder, Alarm, Alarm2, Mail, IM };
-
-    public static string Label(string name) => name switch
-    {
-        Reminder => "リマインダー",
-        Alarm => "アラーム",
-        Alarm2 => "アラーム2",
-        Mail => "メール",
-        IM => "メッセージ",
-        _ => "既定",
-    };
 }

@@ -24,12 +24,14 @@ public sealed class TrayService : IDisposable
 
         var reLoginItem = new ToolStripMenuItem("再ログイン", null, (_, _) => ReLoginRequested?.Invoke());
         var settingsItem = new ToolStripMenuItem("設定…", null, (_, _) => SettingsRequested?.Invoke());
+        var updateItem = new ToolStripMenuItem("更新を確認", null, (_, _) => UpdateRequested?.Invoke());
         var exitItem = new ToolStripMenuItem("終了", null, (_, _) => ExitRequested?.Invoke());
 
         menu.Items.Add(openItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_autoStartItem);
         menu.Items.Add(settingsItem);
+        menu.Items.Add(updateItem);
         menu.Items.Add(reLoginItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
@@ -46,6 +48,7 @@ public sealed class TrayService : IDisposable
 
     public event Action? OpenRequested;
     public event Action? SettingsRequested;
+    public event Action? UpdateRequested;
     public event Action? ReLoginRequested;
     public event Action? ExitRequested;
     public event Action<bool>? AutoStartToggled;
