@@ -1,0 +1,119 @@
+name: Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'リリースするバージョン（例: 0.2.0）'
+        required: false
+        type: string
+      prerelease:
+        description: 'プレリリースとして公開する'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  PROJECT: src/DeLienCalendar.Desktop/DeLienCalendar.Desktop.csproj
+  RUNTIME: win-x64
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: 1. Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 2. Determine version
+        id: version
+        shell: pwsh
+        run: |
+          $eventName = '${{ github.event_name }}'
+          if ($eventName -eq 'push') {
+            $version = '${{ github.ref_name }}'.TrimStart('v')
+          }
+          elseif ('${{ inputs.version }}' -ne '') {
+            $version = '${{ inputs.version }}'.TrimStart('v')
+          }
+          else {
+            [xml]$csproj = Get-Content -LiteralPath '${{ env.PROJECT }}'
+            $version = @($csproj.Project.PropertyGroup.Version) | Where-Object { $_ } | Select-Object -First 1
+          }
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'バージョンを決定できませんでした。workflow_dispatch で version を指定してください。'
+          }
+          [xml]$csprojCheck = Get-Content -LiteralPath '${{ env.PROJECT }}'
+          $csprojVersion = @($csprojCheck.Project.PropertyGroup.Version) | Where-Object { $_ } | Select-Object -First 1
+          if ($csprojVersion -and $csprojVersion -ne $version) {
+            Write-Host "::warning::タグ/入力 ($version) と csproj の Version ($csprojVersion) が一致しません。"
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version"  >> $env:GITHUB_OUTPUT
+
+      - name: 3. Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: 4. Publish
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish $env:PROJECT -c Release -r $env:RUNTIME --self-contained false `
+            -p:Version=$env:VERSION -o dist/app
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish に失敗しました。" }
+
+      - name: 5. Package
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($file in @('install.ps1', 'README.md', 'LICENSE', 'SECURITY.md')) {
+            if (Test-Path $file) { Copy-Item $file dist/app/ -Force }
+            else { Write-Host "::warning::$file が見つかりません。" }
+          }
+          Compress-Archive -Path dist/app/* -DestinationPath "dist/DeLienCalendar-$env:VERSION-win-x64.zip" -Force
+
+      - name: 6. Checksums
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $lines = Get-ChildItem dist/*.zip | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          }
+          $lines | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding ascii -Append
+
+      - name: 7. Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: DeLien Calendar ${{ steps.version.outputs.value }}
+          generate_release_notes: true
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease }}
+          body: |
+            ## インストール
+            1. `DeLienCalendar-*-win-x64.zip` をダウンロードして展開
+            2. フォルダ内で `install.ps1` を実行（管理者権限不要）
+            **動作要件**: Windows 10 1809 以降 / 11、.NET 8 デスクトップランタイム、WebView2 ランタイム
+            > 未署名のため SmartScreen の警告が表示される場合があります。詳細は SECURITY.md を参照。
+          files: |
+            dist/DeLienCalendar-*-win-x64.zip
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
