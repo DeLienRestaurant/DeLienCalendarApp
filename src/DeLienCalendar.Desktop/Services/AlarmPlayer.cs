@@ -14,68 +14,95 @@ public sealed class AlarmPlayer : IDisposable
 
     private WasapiOut? _output;
     private AudioFileReader? _reader;
-    private bool _loop;
-    private bool _stopping;
     private bool _disposed;
-
-    public bool IsPlaying
-    {
-        get
-        {
-            lock (_gate) return _output is not null && !_stopping;
-        }
-    }
 
     /// <summary>
     /// 再生する。<paramref name="loop"/> が true の場合は停止するまで繰り返す。
     /// <paramref name="maxDuration"/> を指定すると、その時間で打ち切る。
+    /// 返り値のタスクは、再生が終わるか <see cref="Stop"/> されるまで完了しない。
     /// </summary>
     public async Task PlayAsync(string path, string? deviceId, bool loop, TimeSpan? maxDuration = null)
     {
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        WasapiOut? previousOutput;
+        AudioFileReader? previousReader;
         lock (_gate)
         {
-            StopCore();
+            if (_disposed) return;
+            previousOutput = _output;
+            previousReader = _reader;
+            _output = null;
+            _reader = null;
+        }
+        // 停止はロックの外で行う（PlaybackStopped からの再入でデッドロックしないように）
+        ReleaseOutput(previousOutput, previousReader);
 
+        WasapiOut output;
+        AudioFileReader reader;
+        try
+        {
             var device = AudioDeviceService.Find(deviceId);
-            var output = device is null
+            output = device is null
                 ? new WasapiOut(AudioClientShareMode.Shared, 200)
                 : new WasapiOut(device, AudioClientShareMode.Shared, false, 200);
-
-            var reader = new AudioFileReader(path);
+            reader = new AudioFileReader(path);
             output.Init(reader);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"アラーム音を読み込めませんでした: {path}", ex);
+            return;
+        }
 
-            _output = output;
-            _reader = reader;
-            _loop = loop;
-            _stopping = false;
+        output.PlaybackStopped += (_, e) =>
+        {
+            bool restart;
+            lock (_gate) restart = loop && !_disposed && ReferenceEquals(_output, output);
 
-            output.PlaybackStopped += (_, _) =>
+            if (restart)
             {
-                bool restart;
-                lock (_gate) restart = _loop && !_stopping && !_disposed;
-
-                if (restart)
+                try
                 {
-                    try
-                    {
-                        _reader!.Position = 0;
-                        _output!.Play();
-                    }
-                    catch (Exception ex)
-                    {
-                        AppLog.Write("アラーム音の再再生に失敗しました", ex);
-                        completion.TrySetResult(true);
-                    }
+                    reader.Position = 0;
+                    output.Play();
+                    return;
                 }
-                else
+                catch (Exception ex)
                 {
-                    completion.TrySetResult(true);
+                    AppLog.Write("アラーム音の再再生に失敗しました", ex);
                 }
-            };
+            }
 
+            if (e.Exception is not null) AppLog.Write("アラーム音の再生に失敗しました", e.Exception);
+            completion.TrySetResult(true);
+        };
+
+        bool disposedMeanwhile;
+        lock (_gate)
+        {
+            disposedMeanwhile = _disposed;
+            if (!disposedMeanwhile)
+            {
+                _output = output;
+                _reader = reader;
+            }
+        }
+        if (disposedMeanwhile)
+        {
+            ReleaseOutput(output, reader);
+            return;
+        }
+
+        try
+        {
             output.Play();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("アラーム音の再生に失敗しました", ex);
+            Stop();
+            return;
         }
 
         if (maxDuration is null)
@@ -84,46 +111,64 @@ public sealed class AlarmPlayer : IDisposable
             return;
         }
 
-        await Task.WhenAny(completion.Task, Task.Delay(maxDuration.Value)).ConfigureAwait(false);
+        var finished = await Task.WhenAny(completion.Task, Task.Delay(maxDuration.Value)).ConfigureAwait(false);
+        if (finished != completion.Task) Stop();
     }
 
     public void Stop()
     {
-        lock (_gate) StopCore();
-    }
-
-    private void StopCore()
-    {
-        _stopping = true;
-        try
+        WasapiOut? output;
+        AudioFileReader? reader;
+        lock (_gate)
         {
-            _output?.Stop();
+            output = _output;
+            reader = _reader;
+            _output = null;
+            _reader = null;
         }
-        catch (Exception ex)
-        {
-            AppLog.Write("アラーム音の停止に失敗しました", ex);
-        }
-
-        try
-        {
-            _output?.Dispose();
-        }
-        catch
-        {
-            // 破棄時の失敗は無視する
-        }
-
-        _output = null;
-        _reader?.Dispose();
-        _reader = null;
+        ReleaseOutput(output, reader);
     }
 
     public void Dispose()
     {
         lock (_gate)
         {
+            if (_disposed) return;
             _disposed = true;
-            StopCore();
+        }
+        Stop();
+    }
+
+    private static void ReleaseOutput(WasapiOut? output, AudioFileReader? reader)
+    {
+        if (output is not null)
+        {
+            try
+            {
+                output.Stop();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Write("アラーム音の停止に失敗しました", ex);
+            }
+
+            try
+            {
+                output.Dispose();
+            }
+            catch
+            {
+                // 破棄時の失敗は無視する
+            }
+        }
+
+        try
+        {
+            reader?.Dispose();
+        }
+        catch
+        {
+            // 破棄時の失敗は無視する
         }
     }
 }

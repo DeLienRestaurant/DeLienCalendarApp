@@ -36,15 +36,9 @@ public partial class App : System.Windows.Application
         }
 
         // タスクスケジューラから起動された「アラーム表示のみ」モード
-        var notifyMode = HandleNotifyMode(e.Args);
-        if (notifyMode == NotifyMode.Handled)
+        if (HandleNotifyMode(e.Args) == NotifyMode.Handled)
         {
             Shutdown();
-            return;
-        }
-        if (notifyMode == NotifyMode.Playing)
-        {
-            // 音声の再生が終わったら自分で Shutdown する
             return;
         }
 
@@ -161,12 +155,10 @@ public partial class App : System.Windows.Application
         None,
         /// <summary>通知を出し終えた（すぐ終了してよい）</summary>
         Handled,
-        /// <summary>音声を再生中（再生完了後に Shutdown する）</summary>
-        Playing,
     }
 
     /// <summary>
-    /// --notify {eventId} で起動された場合はトーストとアラーム音を出して終了する。
+    /// --notify {eventId} で起動された場合はトーストとアラーム画面を出して終了する。
     /// トーストは無音で表示し、音は出力デバイスを指定してアプリ側で再生する。
     /// </summary>
     private NotifyMode HandleNotifyMode(string[] args)
@@ -201,22 +193,16 @@ public partial class App : System.Windows.Application
             return NotifyMode.Handled;
         }
 
-        if (settings.NotificationStyle == NotificationStyles.Alarm)
-        {
-            // 停止されるまでループ再生するウィンドウを出す
-            var window = new AlarmWindow(
-                calendarEvent?.Title ?? "DeLien Calendar",
-                calendarEvent is null ? "予定の時刻になりました。" : BuildAlarmDetail(calendarEvent),
-                soundPath,
-                settings.OutputDeviceId);
-            window.ShowDialog();
-            return NotifyMode.Handled;
-        }
-
-        // トースト: 1回だけ再生してから終了する
-        var player = new AlarmPlayer();
-        _ = PlayOnceThenShutdownAsync(player, soundPath, settings.OutputDeviceId);
-        return NotifyMode.Playing;
+        // 音を鳴らすときは必ずアラーム画面（停止・スヌーズ）を出す。
+        // アラームは止めるまでループし、トーストは1回鳴らして鳴り終わったら閉じる。
+        var window = new AlarmWindow(
+            calendarEvent?.Title ?? "DeLien Calendar",
+            calendarEvent is null ? "予定の時刻になりました。" : BuildAlarmDetail(calendarEvent),
+            soundPath,
+            settings.OutputDeviceId,
+            loop: settings.NotificationStyle == NotificationStyles.Alarm);
+        window.ShowDialog();
+        return NotifyMode.Handled;
     }
 
     private static string BuildAlarmDetail(ApiEvent? calendarEvent)
@@ -226,23 +212,6 @@ public partial class App : System.Windows.Application
             ? $"{calendarEvent.StartLocal:M月d日(ddd)} 終日"
             : $"{calendarEvent.StartLocal:M月d日(ddd) HH:mm} - {calendarEvent.EndLocal:HH:mm}";
         return string.IsNullOrWhiteSpace(calendarEvent.CalendarName) ? time : $"{time} / {calendarEvent.CalendarName}";
-    }
-
-    private async Task PlayOnceThenShutdownAsync(AlarmPlayer player, string path, string deviceId)
-    {
-        try
-        {
-            await player.PlayAsync(path, deviceId, loop: false, maxDuration: TimeSpan.FromSeconds(30));
-        }
-        catch (Exception ex)
-        {
-            AppLog.Write("通知音の再生に失敗しました", ex);
-        }
-        finally
-        {
-            player.Dispose();
-            Dispatcher.Invoke(Shutdown);
-        }
     }
 
     /// <summary>--sync で起動された場合はヘッドレス同期だけ行って終了する</summary>
@@ -401,3 +370,4 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 }
+
