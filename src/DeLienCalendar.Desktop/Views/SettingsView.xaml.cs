@@ -475,7 +475,7 @@ public partial class SettingsView : UserControl
             {
                 Text = "カレンダー情報がまだ取得できていません。「今すぐ同期」を実行してください。",
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = System.Windows.Media.Brushes.Gray,
+                Foreground = TryFindResource("MutedTextBrush") as System.Windows.Media.Brush ?? System.Windows.Media.Brushes.Gray,
             });
             return;
         }

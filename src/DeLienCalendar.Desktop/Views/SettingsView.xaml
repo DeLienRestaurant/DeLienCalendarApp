@@ -157,7 +157,9 @@
             <TextBlock Text="通知するカレンダー" Style="{StaticResource SectionTitle}" />
             <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,10"
                        Text="すべて外すと「関係する全カレンダー」が対象になります。" />
-            <Border Background="{DynamicResource AccentForegroundBrush}" CornerRadius="8" Padding="14">
+            <!-- 背景はテーマの surface 色にする（AccentForeground はダークで白のままで文字が読めなくなる） -->
+            <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource CardBorderBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="14">
               <StackPanel x:Name="CalendarList" />
             </Border>
           </StackPanel>
